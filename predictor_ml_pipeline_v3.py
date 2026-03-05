@@ -285,12 +285,13 @@ def build_master_panel(paths: DataPaths, latam_iso3: List[str]) -> pd.DataFrame:
     # ---------------------------------------------------------
     # Prefer prebuilt panel (R output) if available
     # ---------------------------------------------------------
+    panel_mech_path   = os.path.join(paths.base_path, "03_panel", "panel_master_ml_ready_pruned_mech.csv")
     panel_locf_path   = os.path.join(paths.base_path, "03_panel", "panel_master_ml_ready_pruned_locf.csv") 
     panel_pruned_path = os.path.join(paths.base_path, "03_panel", "panel_master_ml_ready_pruned.csv")
     panel_ml_path     = os.path.join(paths.base_path, "03_panel", "panel_master_ml_ready.csv")
     panel_clean_path  = os.path.join(paths.base_path, "03_panel", "panel_master_clean.csv")
 
-    for p in [panel_locf_path, panel_pruned_path, panel_ml_path, panel_clean_path]:
+    for p in [panel_mech_path, panel_locf_path, panel_pruned_path, panel_ml_path, panel_clean_path]:
         if os.path.exists(p):
             log(f"[LOAD] Using prebuilt panel: {p}")
             df = pd.read_csv(p, low_memory=False)
