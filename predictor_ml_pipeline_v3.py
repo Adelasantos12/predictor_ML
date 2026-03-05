@@ -142,7 +142,54 @@ def year_split_idx(df: pd.DataFrame, train_end: int, val_end: int, test_end: int
         "val": np.where((y > train_end) & (y <= val_end))[0],
         "test": np.where((y > val_end) & (y <= test_end))[0],
     }
+   
+def pick_threshold_max_f1(y_true: np.ndarray, p: np.ndarray) -> dict:
+    """Pick probability threshold that maximizes F1 on a given set."""
+    y_true = np.asarray(y_true).astype(int)
+    p = np.asarray(p).astype(float)
 
+    # Guardrails
+    if len(y_true) == 0 or len(np.unique(y_true)) < 2:
+        return {"threshold": 0.5, "f1": None, "precision": None, "recall": None}
+
+    thresholds = np.linspace(0.01, 0.99, 99)
+    best = {"threshold": 0.5, "f1": -1.0, "precision": 0.0, "recall": 0.0}
+
+    for t in thresholds:
+        y_hat = (p >= t).astype(int)
+        prec, rec, f1, _ = precision_recall_fscore_support(
+            y_true, y_hat, average="binary", zero_division=0
+        )
+        if f1 > best["f1"]:
+            best = {"threshold": float(t), "f1": float(f1), "precision": float(prec), "recall": float(rec)}
+
+    return best
+
+
+def eval_probs_with_threshold(y_true: np.ndarray, y_prob: np.ndarray, threshold: float) -> dict:
+    """Evaluate probabilistic classifier with a chosen threshold (plus rank/calibration metrics)."""
+    y_true = np.asarray(y_true).astype(int)
+    y_prob = np.clip(np.asarray(y_prob).astype(float), 1e-6, 1 - 1e-6)
+
+    y_hat = (y_prob >= threshold).astype(int)
+    prec, rec, f1, _ = precision_recall_fscore_support(y_true, y_hat, average="binary", zero_division=0)
+
+    out = {
+        "threshold": float(threshold),
+        "precision": float(prec),
+        "recall": float(rec),
+        "f1": float(f1),
+        "brier": float(brier_score_loss(y_true, y_prob)),
+    }
+    # ranking metrics only meaningful if both classes exist
+    if len(np.unique(y_true)) > 1:
+        out["roc_auc"] = float(roc_auc_score(y_true, y_prob))
+        out["pr_auc"] = float(average_precision_score(y_true, y_prob))
+    else:
+        out["roc_auc"] = None
+        out["pr_auc"] = None
+
+    return out
 
 # -----------------------------
 # Temporal CV (rolling by year)
@@ -637,6 +684,9 @@ def run_event(panel, paths, args, features, tag):
 
     pred_df = d.iloc[te][["iso3c","year","y_event","delta_tplus1"]].copy()
     pred_df["pred_prob"] = p_test
+    
+    pred_df["pred_label"] = (pred_df["pred_prob"] >= best_thr).astype(int)
+    pred_df["threshold_used"] = float(best_thr)
 
     tau = conformal_classification_tau(p_val, y[va], alpha=args.alpha)
     pred_df["conformal_set"] = apply_conformal_sets(p_test, tau)
@@ -716,14 +766,23 @@ def run_hazard(panel, paths, args, features, tag):
     calib.fit(X.iloc[va], y[va])
 
     p_test = calib.predict_proba(X.iloc[te])[:,1]
-    p_val = calib.predict_proba(X.iloc[va])[:,1]
+    p_val  = calib.predict_proba(X.iloc[va])[:,1]
+
+    # ---- choose threshold on validation (headline-friendly) ----
+    thr_info = pick_threshold_max_f1(y[va], p_val) if len(va) else {"threshold": 0.5, "f1": None, "precision": None, "recall": None}
+    best_thr = thr_info["threshold"]
 
     metrics = {
-        "val": eval_probs(y[va], p_val) if len(va) else None,
-        "test": eval_probs(y[te], p_test) if len(te) else None,
+        "val_default05": eval_probs(y[va], p_val) if len(va) else None,
+        "test_default05": eval_probs(y[te], p_test) if len(te) else None,
+
+        # operational metrics with tuned threshold
+        "val": eval_probs_with_threshold(y[va], p_val, best_thr) if len(va) else None,
+        "test": eval_probs_with_threshold(y[te], p_test, best_thr) if len(te) else None,
+
+        "threshold_selection": thr_info,
         "best_params": search.best_params_,
         "features_used": len(feats),
-        "threshold": args.level_threshold,
         "calibration": args.calibration,
     }
     save_json(metrics, os.path.join(task_dir, "metrics.json"))
