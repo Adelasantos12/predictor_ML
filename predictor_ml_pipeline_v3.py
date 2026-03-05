@@ -669,10 +669,20 @@ def run_event(panel, paths, args, features, tag):
     calib.fit(X.iloc[va], y[va])
 
     p_test = calib.predict_proba(X.iloc[te])[:,1]
-    p_val = calib.predict_proba(X.iloc[va])[:,1]
+    p_val  = calib.predict_proba(X.iloc[va])[:,1]
+
+   # ---- choose threshold on validation ----
+   thr_info = pick_threshold_max_f1(y[va], p_val) if len(va) else {"threshold": 0.5, "f1": None, "precision": None, "recall": None}
+   best_thr = float(thr_info["threshold"])
+
     metrics = {
-        "val": eval_probs(y[va], p_val) if len(va) else None,
-        "test": eval_probs(y[te], p_test) if len(te) else None,
+        "val_default05": eval_probs(y[va], p_val) if len(va) else None,
+        "test_default05": eval_probs(y[te], p_test) if len(te) else None,
+
+        "val": eval_probs_with_threshold(y[va], p_val, best_thr) if len(va) else None,
+        "test": eval_probs_with_threshold(y[te], p_test, best_thr) if len(te) else None,
+       
+        "threshold_selection": thr_info,
         "best_params": search.best_params_,
         "features_used": len(feats),
         "calibration": args.calibration,
@@ -684,9 +694,8 @@ def run_event(panel, paths, args, features, tag):
 
     pred_df = d.iloc[te][["iso3c","year","y_event","delta_tplus1"]].copy()
     pred_df["pred_prob"] = p_test
-    
     pred_df["pred_label"] = (pred_df["pred_prob"] >= best_thr).astype(int)
-    pred_df["threshold_used"] = float(best_thr)
+    pred_df["threshold_used"] = (best_thr)
 
     tau = conformal_classification_tau(p_val, y[va], alpha=args.alpha)
     pred_df["conformal_set"] = apply_conformal_sets(p_test, tau)
