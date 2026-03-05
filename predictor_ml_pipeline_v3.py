@@ -671,9 +671,9 @@ def run_event(panel, paths, args, features, tag):
     p_test = calib.predict_proba(X.iloc[te])[:,1]
     p_val  = calib.predict_proba(X.iloc[va])[:,1]
 
-   # ---- choose threshold on validation ----
-   thr_info = pick_threshold_max_f1(y[va], p_val) if len(va) else {"threshold": 0.5, "f1": None, "precision": None, "recall": None}
-   best_thr = float(thr_info["threshold"])
+    # ---- choose threshold on validation ----
+    thr_info = pick_threshold_max_f1(y[va], p_val) if len(va) else {"threshold": 0.5, "f1": None, "precision": None, "recall": None}
+    best_thr = float(thr_info["threshold"])
 
     metrics = {
         "val_default05": eval_probs(y[va], p_val) if len(va) else None,
