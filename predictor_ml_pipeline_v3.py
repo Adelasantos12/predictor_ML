@@ -235,6 +235,41 @@ def detect_outcome_col(df: pd.DataFrame, candidates: List[str]) -> str:
     return cols[0]
 
 def build_master_panel(paths: DataPaths, latam_iso3: List[str]) -> pd.DataFrame:
+    # ---------------------------------------------------------
+    # Prefer prebuilt panel (R output) if available
+    # ---------------------------------------------------------
+    panel_pruned_path = os.path.join(paths.base_path, "03_panel", "panel_master_ml_ready_pruned.csv")
+    panel_ml_path     = os.path.join(paths.base_path, "03_panel", "panel_master_ml_ready.csv")
+    panel_clean_path  = os.path.join(paths.base_path, "03_panel", "panel_master_clean.csv")
+
+    for p in [panel_pruned_path, panel_ml_path, panel_clean_path]:
+        if os.path.exists(p):
+            log(f"[LOAD] Using prebuilt panel: {p}")
+            df = pd.read_csv(p, low_memory=False)
+            df = standardize_panel(df)
+            df = filter_latam(df, latam_iso3)
+
+            # If SPAR exists but targets not, derive them
+            if "spar_cap_law" in df.columns:
+                df = coerce_numeric(df, ["spar_cap_law"])
+                df = df.sort_values(["iso3c", "year"]).reset_index(drop=True)
+
+                if "spar_lag1" not in df.columns:
+                    df["spar_lag1"] = df.groupby("iso3c")["spar_cap_law"].shift(1)
+                if "spar_lag2" not in df.columns:
+                    df["spar_lag2"] = df.groupby("iso3c")["spar_cap_law"].shift(2)
+                if "spar_delta" not in df.columns:
+                    df["spar_delta"] = df["spar_cap_law"] - df["spar_lag1"]
+                if "spar_tplus1" not in df.columns:
+                    df["spar_tplus1"] = df.groupby("iso3c")["spar_cap_law"].shift(-1)
+                if "delta_tplus1" not in df.columns:
+                    df["delta_tplus1"] = df["spar_tplus1"] - df["spar_cap_law"]
+
+            return df
+
+    # ---------------------------------------------------------
+    # Fallback: build panel from individual clean datasets
+    # ---------------------------------------------------------
     df_spar = load_optional_panel(paths, "SPAR", ["spar_clean_latam.csv", "spar_clean_latam_panel.csv"])
     if df_spar is None:
         raise FileNotFoundError("Necesito SPAR para correr el pipeline.")
