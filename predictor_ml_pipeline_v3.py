@@ -832,8 +832,20 @@ if __name__ == "__main__":
     log("[TASK] Event BASE");     event_base = run_event(panel, paths, args, blocks["base"], "base")
     log("[TASK] Event EXTENDED"); event_ext  = run_event(panel, paths, args, blocks["extended"], "extended")
 
-    log("[TASK] Hazard BASE");    haz_base   = run_hazard(panel, paths, args, blocks["base"], "base")
-    log("[TASK] Hazard EXTENDED");haz_ext    = run_hazard(panel, paths, args, blocks["extended"], "extended")
+    # Hazard (optional): if it fails (e.g., empty temporal CV folds), skip without crashing
+    try:
+        log("[TASK] Hazard BASE")
+        haz_base = run_hazard(panel, paths, args, blocks["base"], "base")
+    except Exception as e:
+        warn(f"Hazard BASE skipped due to error: {e}")
+        haz_base = {"skipped": True, "error": str(e)}
+
+    try:
+        log("[TASK] Hazard EXTENDED")
+        haz_ext = run_hazard(panel, paths, args, blocks["extended"], "extended")
+    except Exception as e:
+        warn(f"Hazard EXTENDED skipped due to error: {e}")
+        haz_ext = {"skipped": True, "error": str(e)}
 
     ext_val = run_tobacco_optional(paths, latam_iso3, args)
 
